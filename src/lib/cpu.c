@@ -39,6 +39,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <limits.h>
 
 #include "tengine_c_api.h"
@@ -63,6 +64,8 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+
+#define ENABLE_CPU_CLUSTERING_ENV "ENABLE_CPU_CLUSTERING"
 
 static int core_count = 0;
 
@@ -249,46 +252,49 @@ int init_cluster_mask()
 
     affinity_mask_all_cluster = (1 << core_count) - 1;
 
-    //#ifdef __ANDROID__
-    int max_freq_min_val = INT_MAX;
-    int max_freq_max_val = 0;
-
-    // TODO: deal with very large count of cores
-    int max_freq_array[sizeof(size_t) * 8];
-    for (int i = 0; i < core_count; i++)
+    if (getenv(ENABLE_CPU_CLUSTERING_ENV)) 
     {
-        int max_freq_khz = get_max_freq_khz(i);
-//        fprintf(stderr, "cpu %d, max_freq_khz %d\n", i, max_freq_khz);
-        max_freq_array[i] = max_freq_khz;
+        //#ifdef __ANDROID__
+        int max_freq_min_val = INT_MAX;
+        int max_freq_max_val = 0;
 
-        if (max_freq_khz > max_freq_max_val)
-            max_freq_max_val = max_freq_khz;
-        if (max_freq_khz < max_freq_min_val)
-            max_freq_min_val = max_freq_khz;
-    }
-
-    if (max_freq_max_val == max_freq_min_val)
-    {
-        affinity_mask_big_cluster = affinity_mask_all_cluster;
-        affinity_mask_medium_cluster = 0;
-        affinity_mask_little_cluster = 0;
-    }
-    else
-    {
+        // TODO: deal with very large count of cores
+        int max_freq_array[sizeof(size_t) * 8];
         for (int i = 0; i < core_count; i++)
         {
-            if (max_freq_array[i] == max_freq_max_val)
-                affinity_mask_big_cluster |= (1 << i);
-            else if (max_freq_array[i] == max_freq_min_val)
-                affinity_mask_little_cluster |= (1 << i);
-            else
-                affinity_mask_medium_cluster |= (1 << i);
+            int max_freq_khz = get_max_freq_khz(i);
+    //        fprintf(stderr, "cpu %d, max_freq_khz %d\n", i, max_freq_khz);
+            max_freq_array[i] = max_freq_khz;
+
+            if (max_freq_khz > max_freq_max_val)
+                max_freq_max_val = max_freq_khz;
+            if (max_freq_khz < max_freq_min_val)
+                max_freq_min_val = max_freq_khz;
         }
+
+        if (max_freq_max_val == max_freq_min_val)
+        {
+            affinity_mask_big_cluster = affinity_mask_all_cluster;
+            affinity_mask_medium_cluster = 0;
+            affinity_mask_little_cluster = 0;
+        }
+        else
+        {
+            for (int i = 0; i < core_count; i++)
+            {
+                if (max_freq_array[i] == max_freq_max_val)
+                    affinity_mask_big_cluster |= (1 << i);
+                else if (max_freq_array[i] == max_freq_min_val)
+                    affinity_mask_little_cluster |= (1 << i);
+                else
+                    affinity_mask_medium_cluster |= (1 << i);
+            }
+        }
+        //#else
+        //    // TODO implement me for other platforms
+        //    affinity_mask_big_cluster = affinity_mask_all_cluster;
+        //#endif
     }
-    //#else
-    //    // TODO implement me for other platforms
-    //    affinity_mask_big_cluster = affinity_mask_all_cluster;
-    //#endif
 
     return 0;
 }
